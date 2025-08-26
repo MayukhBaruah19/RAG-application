@@ -11,4 +11,5 @@ langchain_ollama
 sentence-transformers
 chromadb
 pypdf
+faiss-cpu
 -e .
