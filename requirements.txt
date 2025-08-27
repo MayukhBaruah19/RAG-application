@@ -1,15 +1,12 @@
 langchain
 langchain_community
-langchain_huggingface
 langchain-core
 python-dotenv
-langchain-deepseek
-streamlit>=1.28.0
-ollama>=0.5.0
-requests>=2.31.0
+streamlit
+requests
 langchain_ollama
-sentence-transformers
-chromadb
 pypdf
 faiss-cpu
+langchain_faiss
+typing-extensions
 -e .

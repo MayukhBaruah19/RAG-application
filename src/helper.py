@@ -1,30 +1,27 @@
-from langchain.document_loaders import PyPDFLoader, DirectoryLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
+
 from typing import List
+from langchain.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
+from src.models import get_embeddings
+
+# 1. Load PDF
+def load_pdf(pdf_path: str) -> List[Document]:
+    loader = PyPDFLoader(pdf_path)
+    documents = loader.load()
+    print(f"Loaded {len(documents)} pages from {pdf_path}")
+    return documents    
+
+# 2. Split documents into chunks
+def split_documents(documents: List[Document], chunk_size=500, chunk_overlap=50) -> List[Document]:
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    splitted_docs = splitter.split_documents(documents)
+    return splitted_docs
 
 
-#Extract the documents from the PDF files
-def load_pdf_file(data):
-    loader= DirectoryLoader(data,
-                            glob="*.pdf",
-                            loader_cls=PyPDFLoader)
 
-    documents=loader.load()
-
-    return documents
-
-
-
-def filter_important_texts(docs: List[Document]) -> List[Document]:
-    imp_documents: List[Document] = []
-    for doc in docs:  #  iterate over the argument, not the function
-        src = doc.metadata.get("source")
-        imp_documents.append(
-            Document(
-                page_content=doc.page_content,
-                metadata={"source": src}
-            )
-        )
-    return imp_documents
+# 4. Load embeddings
+def load_embeddings():
+    embeddings = get_embeddings()
+    print("Embedding Generated Successfully")
+    return embeddings
