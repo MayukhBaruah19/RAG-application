@@ -1,17 +1,16 @@
-from langchain_ollama import ChatOllama,OllamaEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 
 LLM_MODEL_LIST = [
-    "llama2:latest"
+    "mistral:7b"
 ]
 
-
-def get_llm(model_name: str):
+def get_llm(model_name=None):
+    if model_name is None:
+        model_name = LLM_MODEL_LIST[0]
     return ChatOllama(model=model_name)
 
-
 def get_embeddings():
-    """
-    Returns OllamaEmbeddings object to be used with Chroma.
-    """
+    """Load Ollama embeddings."""
     return OllamaEmbeddings(model="nomic-embed-text:v1.5")
+
