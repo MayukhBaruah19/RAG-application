@@ -5,8 +5,10 @@ from src.models.llm import get_llm,LLM_MODEL_LIST
 from src.models.embedding import get_embeddings
 from src.QAchain.retrieval_qa import create_qa_chain
 from langchain_community.vectorstores import Chroma
-from langchain.prompts.chat import ChatPromptTemplate,SystemMessagePromptTemplate,HumanMessagePromptTemplate
-from langchain.chains import RetrievalQA
+import logging
+# from langchain.prompts.chat import ChatPromptTemplate,SystemMessagePromptTemplate,HumanMessagePromptTemplate
+# from langchain.chains import RetrievalQA
+
 
 DATA_FOLDER = "data"          
 CHROMA_INDEX_DIR = "chroma_index"  # VectorDB folder
@@ -22,15 +24,17 @@ def get_vector_db():
 
     embedding=get_embeddings()
 
-     # load existing vector database
+    # Check if database exists
     vector_db=None
     db_exists=os.path.exists(os.path.join(CHROMA_INDEX_DIR,'chroma.sqlite'))
+
     if db_exists:
         vector_db=Chroma(
             persist_directory=CHROMA_INDEX_DIR,
             embedding_function=embedding 
         )
-     #process file 
+
+    #process PDF file 
     pdf_files= [f for f in os.listdir(DATA_FOLDER) if f.lower().endswith(".pdf")]
     if not pdf_files:
         st.write("No PDF files found in the data folder")
@@ -48,6 +52,7 @@ def get_vector_db():
                     break
         if already_added:
             continue
+
         # Load pdf and split
         docs=load_pdf(pdf_path)
         chunks=split_documents(docs)
@@ -63,6 +68,7 @@ def get_vector_db():
                 embedding=embedding,
                 persist_directory=CHROMA_INDEX_DIR
             )
+            
     # persist db
     if vector_db:
         vector_db.persist()
@@ -70,7 +76,7 @@ def get_vector_db():
     return vector_db
 
 # QA chain    
-@st.cache_resource(show_spinner=True)
+@st.cache_resource(show_spinner=False)
 def get_qa_chain():
     llm=get_llm(selected_model)
     vector_db=get_vector_db()
@@ -79,22 +85,8 @@ def get_qa_chain():
     
     retriever = vector_db.as_retriever(search_type="similarity", search_kwargs={"k": TOP_K})
 
-    prompt = ChatPromptTemplate.from_messages([
-        SystemMessagePromptTemplate.from_template(
-            "You are a helpful assistant. Use the given context to answer the question."
-        ),
-        HumanMessagePromptTemplate.from_template(
-            "Question: {question}\n\nContext: {context}"
-        )
-    ])
 
-    qa_chain=RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        chain_type_kwargs={"prompt":prompt}
-       
-    )
+    qa_chain=create_qa_chain(llm, retriever, top_k=TOP_K)
 
     return qa_chain
 
@@ -104,10 +96,11 @@ st.title(" PDF Question Answering Bot")
 user_question = st.text_input("Enter your question here:")
 
 if user_question:
-    qa_chain = get_qa_chain()
-    response=qa_chain.invoke({"query":user_question})
-    st.header("Answer")
-    st.write(response['result'])
+    with st.spinner("Generating answer..."):
+        qa_chain = get_qa_chain()
+        response=qa_chain.invoke({"query":user_question})
+        st.header("Answer")
+        st.write(response['result'])
 
     
 
