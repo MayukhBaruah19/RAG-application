@@ -4,5 +4,5 @@ langchain-community==0.3.29
 langchain-ollama==0.3.7
 pypdf==6.0.0
 streamlit
-chromadb
+chromadb==1.0.20
 -e .
