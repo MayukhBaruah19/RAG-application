@@ -16,56 +16,82 @@ TOP_K = 3
 os.makedirs(DATA_FOLDER, exist_ok=True)
 os.makedirs(CHROMA_INDEX_DIR, exist_ok=True)
 
-# Define class and subject mapping to PDF files
-CLASS_SUBJECT_MAPPING = {
-    "General": {  # Add General option
-        "All Subjects": ["chapter1.pdf", "Chemical Reactions.pdf", "Acids, Bases.pdf", "Metals and Non-metals.pdf", "Life Processes.pdf", "info2.pdf"]
-    },
-    "Class 9": {
-        "Science": ["chapter1.pdf"],
-        "Mathematics": ["chapter1.pdf"],
-        "Social Science": ["chapter1.pdf"]
-    },
-    "Class 10": {
-        "Science": ["Chemical Reactions.pdf", "Acids, Bases.pdf", "Metals and Non-metals.pdf", "Life Processes.pdf","info2.pdf"],
-        "Mathematics": ["chapter1.pdf"],
-        "History": ["info2.pdf"]
-    },
-    "Class 11": {   
-        "Physics": ["chapter1.pdf" ],
-        "Chemistry": ["chapter1.pdf"],
-        "Biology": ["chapter1.pdf"]
+
+def discover_pdfs():
+    """Automatically discover all PDF files in the data folder and subfolders"""
+    pdf_files = []
+    
+    for root, dirs, files in os.walk(DATA_FOLDER):
+        for file in files:
+            if file.lower().endswith('.pdf'):
+                # Get relative path from DATA_FOLDER
+                rel_path = os.path.relpath(os.path.join(root, file), DATA_FOLDER)
+                pdf_files.append(rel_path)
+    
+    return pdf_files
+
+def auto_generate_mapping():
+    """Automatically generate class-subject mapping based on folder structure"""
+    all_pdfs = discover_pdfs()
+    
+    mapping = {
+        "General": {"All Subjects": all_pdfs}  # Always include all PDFs in General
     }
-}
+    
+    # Extract classes and subjects from folder structure
+    classes = {}
+    for pdf_path in all_pdfs:
+        # Split path into components
+        path_parts = pdf_path.split(os.sep)
+        
+        if len(path_parts) >= 2:
+            # First part is class, second part is subject
+            class_name = path_parts[0]
+            subject_name = path_parts[1]
+            
+            if class_name not in classes:
+                classes[class_name] = {}
+            
+            if subject_name not in classes[class_name]:
+                classes[class_name][subject_name] = []
+            
+            classes[class_name][subject_name].append(pdf_path)
+    
+    # Add discovered classes to mapping
+    for class_name, subjects in classes.items():
+        mapping[class_name] = subjects
+    
+    return mapping
 
+# Generate mapping automatically
+CLASS_SUBJECT_MAPPING = auto_generate_mapping()
 
+# ==================== STREAMLIT UI ====================
 st.set_page_config(page_title="Edukracy Chatbot", page_icon="📚")
 st.title("📚 Edukracy - Educational Chatbot")
 
 # Sidebar for selections
 st.sidebar.header("Academic Selection")
 
-# Class selection with General option
-class_options = ["General"] + list(CLASS_SUBJECT_MAPPING.keys())
-class_options.remove("General")  # Remove duplicate
-class_options = ["General"] + [c for c in class_options if c != "General"]
-selected_class = st.sidebar.selectbox("Select Class", class_options)
+
+# Class selection
+available_classes = list(CLASS_SUBJECT_MAPPING.keys())
+selected_class = st.sidebar.selectbox("Select Class", available_classes)
 
 # Subject selection based on class
-if selected_class == "General":
-    available_subjects = list(CLASS_SUBJECT_MAPPING[selected_class].keys())
-    selected_subject = st.sidebar.selectbox("Select Subject", available_subjects)
-else:
-    available_subjects = list(CLASS_SUBJECT_MAPPING[selected_class].keys())
-    selected_subject = st.sidebar.selectbox("Select Subject", available_subjects)
+available_subjects = list(CLASS_SUBJECT_MAPPING[selected_class].keys())
+selected_subject = st.sidebar.selectbox("Select Subject", available_subjects)
 
 # Model selection
 selected_model = st.sidebar.selectbox("Select AI Model", LLM_MODEL_LIST)
 
-# Show selected PDF files
+# Show selected PDF files (just filenames)
 selected_pdfs = CLASS_SUBJECT_MAPPING[selected_class][selected_subject]
-st.sidebar.info(f"**Selected Materials:**\n" + "\n".join([f"• {pdf}" for pdf in selected_pdfs]))
+# Extract just the filenames for display
+file_names = [os.path.basename(pdf) for pdf in selected_pdfs]
+st.sidebar.info(f"**Selected Materials:**\n" + "\n".join([f"• {name}" for name in file_names]))
 
+# ==================== VECTOR DATABASE FUNCTIONS ====================
 @st.cache_resource(show_spinner=False)
 def get_vector_db(_selected_class, _selected_subject):
     """Get or create vector database for selected class and subject"""
@@ -99,7 +125,7 @@ def get_vector_db(_selected_class, _selected_subject):
         
         # Process PDF files
         all_chunks = []
-        processed_files = set()  # Track processed files to avoid duplicates
+        processed_files = set()
         
         for pdf_file in pdf_files:
             if pdf_file in processed_files:
@@ -116,18 +142,24 @@ def get_vector_db(_selected_class, _selected_subject):
                 docs = load_pdf(pdf_path)
                 chunks = split_documents(docs)
                 
-                # Add metadata
+                # Add metadata with folder information
                 for chunk in chunks:
+                    # Extract class and subject from path for better metadata
+                    path_parts = pdf_file.split(os.sep)
+                    detected_class = path_parts[0] if len(path_parts) > 0 else "Unknown"
+                    detected_subject = path_parts[1] if len(path_parts) > 1 else "Unknown"
+                    
                     chunk.metadata.update({
                         "source": pdf_file,
-                        "class": _selected_class,
-                        "subject": _selected_subject,
+                        "file_name": os.path.basename(pdf_file),
+                        "class": detected_class,
+                        "subject": detected_subject,
                         "full_path": pdf_path
                     })
                 
                 all_chunks.extend(chunks)
                 processed_files.add(pdf_file)
-                st.sidebar.success(f"✓ Processed {pdf_file}")
+                st.sidebar.success(f"✓ Processed {os.path.basename(pdf_file)}")
                 
             except Exception as e:
                 st.sidebar.error(f"Error processing {pdf_file}: {str(e)}")
@@ -163,13 +195,11 @@ def get_qa_chain(_selected_class, _selected_subject):
             st.error("No knowledge base available for the selected class and subject.")
             return None
         
-        # Create retriever with metadata filtering
         retriever = vector_db.as_retriever(
             search_type="similarity", 
             search_kwargs={"k": TOP_K}
         )
         
-        # Use your existing QA chain function
         qa_chain = create_qa_chain(llm, retriever, TOP_K)
         return qa_chain
         
@@ -177,7 +207,7 @@ def get_qa_chain(_selected_class, _selected_subject):
         st.error(f"Error creating QA chain: {str(e)}")
         return None
 
-# Main chat interface
+# ==================== MAIN INTERFACE ====================
 if selected_class == "General":
     st.header("🌐 General Knowledge Assistant")
 else:
